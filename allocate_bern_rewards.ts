@@ -47,7 +47,7 @@ describe("$BERN Reward allocation", () => {
 	const swapClient = new Client(connection)
 
 	//Enter slippage for token swap
-	const slippage = 5;
+	const slippage = 50;
 
 	//Token mint info
 	let mintInfo;
@@ -173,6 +173,7 @@ describe("$BERN Reward allocation", () => {
 			console.error(`Unable to swap on fluxbeam ${tokenMint} -> ${intermediaryMint}`)
 			return
 		}
+		console.log(`Received ${intermediaryAmount} of ${intermediaryMint}`)
 
 		//Swap Intermediary for the burn token mint
 		const burnTokenAmount = await buyTokenAmountInstruction(intermediaryMint, tokenBurnMint, intermediaryAmount)
@@ -244,9 +245,17 @@ describe("$BERN Reward allocation", () => {
 	 * @param tokenAAmount
 	 */
 	async function buyTokenAmountInstruction(tokenA: anchor.web3.PublicKey, tokenB: anchor.web3.PublicKey, tokenAAmount) {
-		const quote = await axios.get(`https://quote-api.jup.ag/v5/quote?inputMint=${tokenA}&outputMint=${tokenB}&amount=${tokenAAmount}&slippageBps=${slippage}&userPublicKey=${owner.publicKey}`)
+		const uri = `https://quote-api.jup.ag/v5/quote?inputMint=${tokenA}&outputMint=${tokenB}&amount=${tokenAAmount}&slippageBps=${slippage}&userPublicKey=${owner.publicKey}`
+		const quote = await axios.get(uri)
 
-		const transactions = await axios.post('https://quote-api.jup.ag/v5/swap', JSON.stringify(quote), {
+		const body = {
+			quoteResponse: quote.data,
+			userPublicKey: owner.publicKey,
+			wrapUnwrapSOL: true,
+		}
+
+
+		const transactions = await axios.post('https://quote-api.jup.ag/v5/swap', JSON.stringify(body), {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
@@ -254,11 +263,28 @@ describe("$BERN Reward allocation", () => {
 		});
 
 		//@ts-ignore
-		const {swapTransaction} = transactions;
+		const {swapTransaction} = transactions.data;
 		const txn = anchor.web3.VersionedTransaction.deserialize(Buffer.from(swapTransaction, 'base64'))
 
+
+		txn.sign([owner])
+
+		const sig = await connection.sendTransaction(txn, {
+			skipPreflight: skipPreflight,
+			preflightCommitment: "confirmed"
+		})
+
+		const latestBlockHash = await connection.getLatestBlockhash();
+		await connection.confirmTransaction({
+			signature: sig,
+			blockhash: txn.message.recentBlockhash,
+			lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+		})
+
+		console.log("XFER Sig: ", sig)
+
 		//@ts-ignore
-		return {txn, outAmount: quote.outAmount}
+		return quote.data.outAmount
 	}
 
 	async function swapFluxbeamPool(tokenA: TokenInput, tokenB: TokenInput, tokenAAmount, minAmountOut = 0) {
@@ -271,7 +297,7 @@ describe("$BERN Reward allocation", () => {
 
 		const dstAta = getAssociatedTokenAddressSync(tokenB.mint, owner.publicKey, false, tokenB.programID)
 		const preBalance = await connection.getTokenAccountBalance(dstAta, "confirmed")
-		console.log("preBalance", preBalance?.value.amount)
+		console.debug("preBalance", preBalance?.value.amount)
 
 		const txn = await swapClient.createSwapTransaction(
 			owner.publicKey,
@@ -290,7 +316,7 @@ describe("$BERN Reward allocation", () => {
 
 
 		const postBalance = await connection.getTokenAccountBalance(dstAta, "confirmed")
-		console.log("postBalance", postBalance?.value.amount, Number(postBalance?.value.amount) - Number(preBalance?.value.amount))
+		console.debug("postBalance", postBalance?.value.amount, Number(postBalance?.value.amount) - Number(preBalance?.value.amount))
 
 		return Number(postBalance?.value.amount) - Number(preBalance?.value.amount)
 	}
@@ -335,7 +361,9 @@ describe("$BERN Reward allocation", () => {
 
 	//Burn SPLv1 tokens
 	async function burnTokenAmountInstruction(mint, burnAmount, programID = TOKEN_PROGRAM_ID) {
-		return createBurnCheckedInstruction(ata, mint, owner.publicKey, burnAmount, mintInfo.decimals, [], programID)
+		const burnAta = getAssociatedTokenAddressSync(mint, owner.publicKey, false)
+
+		return createBurnCheckedInstruction(burnAta, mint, owner.publicKey, burnAmount, mintInfo.decimals, [], programID)
 	}
 
 	function loadWalletKey(keypairFile: string): anchor.web3.Keypair {
