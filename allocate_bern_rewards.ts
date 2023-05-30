@@ -2,6 +2,7 @@ import * as anchor from "@project-serum/anchor";
 import Client from "./token_swap/client";
 import {
 	AccountLayout,
+	createAssociatedTokenAccountInstruction,
 	createBurnCheckedInstruction,
 	createTransferCheckedInstruction,
 	createWithdrawWithheldTokensFromAccountsInstruction,
@@ -52,6 +53,9 @@ describe("$BERN Reward allocation", () => {
 	//Token mint info
 	let mintInfo;
 
+	//Token mint program
+	let mintProgram: anchor.web3.PublicKey;
+
 	//Token burn mint info
 	let burnMintInfo;
 
@@ -64,6 +68,7 @@ describe("$BERN Reward allocation", () => {
 	it('Gets the required token info', async () => {
 		//Token mint info
 		mintInfo = await connection.getParsedAccountInfo(tokenMint, "confirmed")
+		mintProgram = new anchor.web3.PublicKey(mintInfo.value.owner)
 		mintInfo = mintInfo.value.data.parsed.info
 
 		//Token burn mint info
@@ -129,28 +134,26 @@ describe("$BERN Reward allocation", () => {
 
 		//Send 0.1% to BONK DAO
 		const daoAmount = Math.floor(currentTokenBalance * daoPct)
-		console.log(`XFER -> DAO ${daoAmount} (${daoPct}%)`)
-		const daoIx = await transferTokenAmountInstruction(daoAddress, tokenMint, daoAmount)
+		const {ix: daoIx, dstAta: daoAta} = await transferTokenAmountInstruction(daoAddress, tokenMint, daoAmount, mintProgram)
 
 		//Send 0.3% to Dev Wallet
 		const devAmount = Math.floor(currentTokenBalance * devPct)
-		console.log(`XFER -> DEV ${devAmount} (${devPct}%)`)
-		const devIx = await transferTokenAmountInstruction(devAddress, tokenMint, devAmount)
-
-
-		//Send 1.5% to buy BONK to BURN
-		const burnAmount = Math.floor(currentTokenBalance * burnPct)
-		console.log(`BURN <-     ${burnAmount} (${burnPct}%)`)
-		await burnTokens(burnAmount)
-
+		const {ix: devIx, dstAta: devAta} = await transferTokenAmountInstruction(devAddress, tokenMint, devAmount, mintProgram)
 
 		let txn = new anchor.web3.Transaction()
+		txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, daoAta, daoAddress, tokenMint, mintProgram))
+		txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, devAta, devAddress, tokenMint, mintProgram))
 		txn.add(daoIx)
 		txn.add(devIx)
 
 		const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
 		console.log("CORE XFER Sig: ", sig)
 
+
+		//Send 1.5% to buy BONK to BURN
+		const burnAmount = Math.floor(currentTokenBalance * burnPct)
+		console.log(`BURN <-     ${burnAmount} (${burnPct}%)`)
+		await burnTokens(burnAmount)
 
 		//Send 5% to buy BONK to REFLECT
 		const reflectAmount = currentTokenBalance * reflectPct
@@ -219,6 +222,7 @@ describe("$BERN Reward allocation", () => {
 		let txn = new anchor.web3.Transaction()
 
 		for (let i = 0; i < currentHolders.length; i++) {
+			console.log("Current holder: ", currentHolders[i])
 			const holder = AccountLayout.decode(currentHolders[i].account.data)
 			console.log("holderAcc", holder)
 
@@ -362,8 +366,11 @@ describe("$BERN Reward allocation", () => {
 	}
 
 	//Transfer token mint to dst for given transferAmount
-	async function transferTokenAmountInstruction(dst, mint, transferAmount) {
-		return createTransferCheckedInstruction(ata, tokenMint, dst, owner.publicKey, transferAmount, mintInfo.decimals)
+	async function transferTokenAmountInstruction(dst, mint, transferAmount, programID = TOKEN_PROGRAM_ID) {
+		const dstAta = getAssociatedTokenAddressSync(mint, dst, false, programID)
+		const srcAta = getAssociatedTokenAddressSync(mint, owner.publicKey, false, programID)
+		const ix = createTransferCheckedInstruction(srcAta, tokenMint, dstAta, owner.publicKey, transferAmount, mintInfo.decimals, [], programID)
+		return {ix, dstAta}
 	}
 
 	//Burn SPLv1 tokens
