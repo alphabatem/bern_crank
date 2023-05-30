@@ -15,7 +15,7 @@ import {TokenInput} from "./token_swap/layouts";
 
 describe("$BERN Reward allocation", () => {
 	// Configure the client to use the local cluster.
-	const skipPreflight = false;
+	const skipPreflight = true;
 
 	const WSOL = new anchor.web3.PublicKey("So11111111111111111111111111111111111111112")
 	const USDC = new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
@@ -100,6 +100,10 @@ describe("$BERN Reward allocation", () => {
 	it('Transfers allocated amount to holders', async () => {
 		const currentTokenBalance = await getTokenBalance(ata)
 		console.log("Token Balance", currentTokenBalance)
+		if (currentTokenBalance <= 0) {
+			console.log("No tokens to distribute: ", currentTokenBalance)
+			return
+		}
 
 		//Calculate percentages based on our 6.9% split
 		const daoPct = 0.1 / 6.9
@@ -166,7 +170,7 @@ describe("$BERN Reward allocation", () => {
 		)
 
 		if (!intermediaryAmount) {
-			console.error(`Unable to swap on fluxbeam ${intermediaryMint} -> ${tokenBurnMint}`)
+			console.error(`Unable to swap on fluxbeam ${tokenMint} -> ${intermediaryMint}`)
 			return
 		}
 
@@ -196,8 +200,8 @@ describe("$BERN Reward allocation", () => {
 		return currentHolders;
 	}
 
-	async function getTokenBalance(mint): Promise<number> {
-		const resp = await connection.getTokenAccountBalance(mint, "confirmed")
+	async function getTokenBalance(tokenAccount): Promise<number> {
+		const resp = await connection.getTokenAccountBalance(tokenAccount, "confirmed")
 		return Number(resp.value.amount)
 	}
 
@@ -265,6 +269,10 @@ describe("$BERN Reward allocation", () => {
 			throw new Error("No pools for swap input")
 		}
 
+		const dstAta = getAssociatedTokenAddressSync(tokenB.mint, owner.publicKey, false, tokenB.programID)
+		const preBalance = await connection.getTokenAccountBalance(dstAta, "confirmed")
+		console.log("preBalance", preBalance?.value.amount)
+
 		const txn = await swapClient.createSwapTransaction(
 			owner.publicKey,
 			route.pubkey,
@@ -280,7 +288,11 @@ describe("$BERN Reward allocation", () => {
 
 		console.log("Swap Sig: ", sig)
 
-		return minAmountOut //TODO
+
+		const postBalance = await connection.getTokenAccountBalance(dstAta, "confirmed")
+		console.log("postBalance", postBalance?.value.amount, Number(postBalance?.value.amount) - Number(preBalance?.value.amount))
+
+		return Number(postBalance?.value.amount) - Number(preBalance?.value.amount)
 	}
 
 	//Create a new LUT
