@@ -236,7 +236,7 @@ describe("$BERN Reward allocation", () => {
 			const totalAmount = Math.floor(holder.amount * amountPerToken)
 			console.log(`XFER -> DEV ${totalAmount} (${holder.amount} x ${amountPerToken})`)
 
-			txn.add(createTransferCheckedInstruction(src, tokenMint, holder.address, owner.publicKey, totalAmount, mintInfo.decimals))
+			txn.add(createTransferCheckedInstruction(src, tokenMint, new anchor.web3.PublicKey(holder.address), owner.publicKey, totalAmount, mintInfo.decimals))
 
 			//TODO Calculate amount of xfers we can do per txn
 			if (txn.instructions.length > 18) {
