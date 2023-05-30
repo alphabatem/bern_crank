@@ -1,7 +1,7 @@
 import * as anchor from "@project-serum/anchor";
 import Client from "./token_swap/client";
 import {
-	AccountLayout, burn,
+	AccountLayout,
 	createBurnCheckedInstruction,
 	createTransferCheckedInstruction,
 	createWithdrawWithheldTokensFromAccountsInstruction,
@@ -18,9 +18,14 @@ describe("$BERN Reward allocation", () => {
 	const skipPreflight = false;
 
 	const WSOL = new anchor.web3.PublicKey("So11111111111111111111111111111111111111112")
+	const USDC = new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
 
 	//Set Token Mint
-	let tokenMint = new anchor.web3.PublicKey("4rADWie1EB5k2Dd49oM1SfeNawTRtV2ZTyutFb3B57nG");
+	// let tokenMint = new anchor.web3.PublicKey("4rADWie1EB5k2Dd49oM1SfeNawTRtV2ZTyutFb3B57nG");
+	let tokenMint = new anchor.web3.PublicKey("FdkGacJRQLorEUVewJjtc9xkupbAVeAKNAzNeHhr91XD");
+
+	//Set the token to route through
+	let intermediaryMint = USDC
 
 	//Set to burn BONK
 	let tokenBurnMint = new anchor.web3.PublicKey("DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263");
@@ -32,11 +37,12 @@ describe("$BERN Reward allocation", () => {
 	const devAddress = new anchor.web3.PublicKey("AZRMSXfBrGwpWHLC2ZPnbs4YdGD5ezvS1eAyDyRWt1E2")
 
 	//Set fee authority owner
-	const owner = loadWalletKey("./keypair.json")
+	// const owner = loadWalletKey("./keypair.json")
+	const owner = loadWalletKey("./TestBp2mbAfJC27E4N7TGKZwzoYxuLiEahYcsrXmPhQ.json")
 
 
 	//Enter RPC URL
-	const connection = new Connection("https://rpc.hellomoon.io/{KEY}", "confirmed")
+	const connection = new Connection("https://rpc.hellomoon.io/f197c876-52d7-4566-bc4c-af4405029777", "confirmed")
 
 	const swapClient = new Client(connection)
 
@@ -59,6 +65,7 @@ describe("$BERN Reward allocation", () => {
 
 		//Owner authority token account
 		ata = getAssociatedTokenAddressSync(tokenMint, owner.publicKey, false, TOKEN_2022_PROGRAM_ID)
+		console.log("ATA:", ata.toString())
 
 		// currentHolders = await getTokenAccountsByMint(tokenMint);
 		currentHolders = await getAllTokenHolders();
@@ -81,6 +88,11 @@ describe("$BERN Reward allocation", () => {
 			TOKEN_2022_PROGRAM_ID
 		))
 
+		const bhash = await connection.getLatestBlockhash("confirmed")
+		txn.feePayer = owner.publicKey
+		txn.recentBlockhash = bhash.blockhash
+
+
 		const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
 		console.log("Reclaim Signature: ", sig)
 	})
@@ -95,12 +107,12 @@ describe("$BERN Reward allocation", () => {
 		const burnPct = 1.5 / 6.9
 		const reflectPct = 5 / 6.9
 
-		console.log("Percentages", {
-			daoPct,
-			devPct,
-			burnPct,
-			reflectPct
-		})
+		// console.log("Percentages", {
+		// 	daoPct,
+		// 	devPct,
+		// 	burnPct,
+		// 	reflectPct
+		// })
 
 		//6.9% Fee comes into our `owner` wallet from FeeConfig
 
@@ -118,7 +130,6 @@ describe("$BERN Reward allocation", () => {
 		//Send 1.5% to buy BONK to BURN
 		const burnAmount = Math.floor(currentTokenBalance * burnPct)
 		console.log(`BURN <-     ${burnAmount} (${burnPct}%)`)
-
 		await burnTokens(burnAmount)
 
 
@@ -144,21 +155,26 @@ describe("$BERN Reward allocation", () => {
 
 
 	async function burnTokens(burnAmount: number) {
+		console.log(`Burning ${burnAmount} Tokens`)
 		const txn = new anchor.web3.Transaction()
 
-		//TODO Buy BONK To Burn first
-		//Swap BERN Tokens for SOL
-		const wSOLAmount = await swapFluxbeamPool(
-			new TokenInput(WSOL, 0, TOKEN_PROGRAM_ID),
-			new TokenInput(tokenBurnMint, 0),
+		//Swap tokens to our intermediary SPLv1 Token
+		const intermediaryAmount = await swapFluxbeamPool(
+			new TokenInput(tokenMint, 0),
+			new TokenInput(intermediaryMint, 0, TOKEN_PROGRAM_ID),
 			burnAmount
 		)
 
-		//Swap SOL for BONK
-		const bonkAmount = await buyTokenAmountInstruction(WSOL, tokenBurnMint, wSOLAmount)
+		if (!intermediaryAmount) {
+			console.error(`Unable to swap on fluxbeam ${intermediaryMint} -> ${tokenBurnMint}`)
+			return
+		}
 
-		//Burn BONK
-		txn.add(await burnTokenAmountInstruction(tokenMint, bonkAmount))
+		//Swap Intermediary for the burn token mint
+		const burnTokenAmount = await buyTokenAmountInstruction(intermediaryMint, tokenBurnMint, intermediaryAmount)
+
+		//Burn the Burn tokens
+		txn.add(await burnTokenAmountInstruction(tokenBurnMint, burnTokenAmount))
 
 		const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
 		console.log("Burn Sig: ", sig)
@@ -197,7 +213,6 @@ describe("$BERN Reward allocation", () => {
 			const totalAmount = holder.amount * amountPerToken
 			console.log(`XFER -> DEV ${totalAmount} (${holder.amount} x ${amountPerToken})`)
 
-			// txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, ata, holder, tokenMint)) //They must have a ATA created already - we dont pay fees
 			txn.add(createTransferCheckedInstruction(src, tokenMint, ata, owner.publicKey, totalAmount, mintInfo.decimals))
 
 			//TODO Calculate amount of xfers we can do per txn
@@ -243,8 +258,12 @@ describe("$BERN Reward allocation", () => {
 	}
 
 	async function swapFluxbeamPool(tokenA: TokenInput, tokenB: TokenInput, tokenAAmount, minAmountOut = 0) {
+		console.log(`Getting swap pool - ${tokenA.mint} -> ${tokenB.mint}`)
 		const pools = await swapClient.getSwapPools(tokenA.mint, tokenB.mint)
 		const route = pools[0]
+		if (!route) {
+			throw new Error("No pools for swap input")
+		}
 
 		const txn = await swapClient.createSwapTransaction(
 			owner.publicKey,

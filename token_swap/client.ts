@@ -148,15 +148,15 @@ export default class Client {
 	async createSwapTransaction(payer: web3.PublicKey, pool: web3.PublicKey, srcMint: TokenInput, dstMint: TokenInput, route: TokenSwapPool, amountIn: number, minimumAmountOut: number) {
 		const aToB = srcMint.mint.equals(route.mintA)
 
-		console.log("createSwapTransaction", {
-			amountIn,
-			minimumAmountOut,
-			srcMint: srcMint.mint.toString(),
-			dstMint: dstMint.mint.toString(),
-			routeSrc: route.mintA.toString(),
-			routeDst: route.mintB.toString(),
-			aToBo: aToB
-		})
+		// console.debug("createSwapTransaction", {
+		// 	amountIn,
+		// 	minimumAmountOut,
+		// 	srcMint: srcMint.mint.toString(),
+		// 	dstMint: dstMint.mint.toString(),
+		// 	routeSrc: route.mintA.toString(),
+		// 	routeDst: route.mintB.toString(),
+		// 	aToB: aToB
+		// })
 		const mintAInfo = await this.connection.getParsedAccountInfo(srcMint.mint)
 		const mintBInfo = await this.connection.getParsedAccountInfo(dstMint.mint)
 
