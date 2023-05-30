@@ -52,6 +52,9 @@ describe("$BERN Reward allocation", () => {
 	//Token mint info
 	let mintInfo;
 
+	//Token burn mint info
+	let burnMintInfo;
+
 	//Current holders of the token mint
 	let currentHolders;
 
@@ -62,6 +65,10 @@ describe("$BERN Reward allocation", () => {
 		//Token mint info
 		mintInfo = await connection.getParsedAccountInfo(tokenMint, "confirmed")
 		mintInfo = mintInfo.value.data.parsed.info
+
+		//Token burn mint info
+		burnMintInfo = await connection.getParsedAccountInfo(tokenBurnMint, "confirmed")
+		burnMintInfo = burnMintInfo.value.data.parsed.info
 
 		//Owner authority token account
 		ata = getAssociatedTokenAddressSync(tokenMint, owner.publicKey, false, TOKEN_2022_PROGRAM_ID)
@@ -363,7 +370,7 @@ describe("$BERN Reward allocation", () => {
 	async function burnTokenAmountInstruction(mint, burnAmount, programID = TOKEN_PROGRAM_ID) {
 		const burnAta = getAssociatedTokenAddressSync(mint, owner.publicKey, false)
 
-		return createBurnCheckedInstruction(burnAta, mint, owner.publicKey, burnAmount, mintInfo.decimals, [], programID)
+		return createBurnCheckedInstruction(burnAta, mint, owner.publicKey, burnAmount, burnMintInfo.decimals, [], programID)
 	}
 
 	function loadWalletKey(keypairFile: string): anchor.web3.Keypair {
