@@ -1,7 +1,6 @@
 import * as anchor from "@project-serum/anchor";
 import Client from "./token_swap/client";
 import {
-	AccountLayout,
 	createAssociatedTokenAccountInstruction,
 	createBurnCheckedInstruction,
 	createTransferCheckedInstruction,
@@ -146,9 +145,9 @@ describe("$BERN Reward allocation", () => {
 		let txn = new anchor.web3.Transaction()
 
 		if (!daoAtaInfo.value)
-		txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, daoAta, daoAddress, tokenMint, mintProgram))
+			txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, daoAta, daoAddress, tokenMint, mintProgram))
 		if (!devAtaInfo.value)
-		txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, devAta, devAddress, tokenMint, mintProgram))
+			txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, devAta, devAddress, tokenMint, mintProgram))
 
 		//Add our transfer commands
 		txn.add(daoIx)
@@ -235,7 +234,7 @@ describe("$BERN Reward allocation", () => {
 
 			const totalAmount = Math.floor(holder.amount * amountPerToken)
 
-			txn.add(createTransferCheckedInstruction(src, tokenMint, new anchor.web3.PublicKey(holder.address), owner.publicKey, totalAmount, mintInfo.decimals, mintProgram))
+			txn.add(createTransferCheckedInstruction(src, tokenMint, new anchor.web3.PublicKey(holder.address), owner.publicKey, totalAmount, mintInfo.decimals, [], mintProgram))
 
 			//TODO Calculate amount of xfers we can do per txn
 			if (txn.instructions.length > 18) {
