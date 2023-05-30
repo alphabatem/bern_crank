@@ -36,7 +36,7 @@ describe("$BERN Reward allocation", () => {
 
 
 	//Enter RPC URL
-	const connection = new Connection("https://rpc.hellomoon.io/f197c876-52d7-4566-bc4c-af4405029777", "confirmed")
+	const connection = new Connection("https://rpc.hellomoon.io/{KEY}", "confirmed")
 
 	const swapClient = new Client(connection)
 
