@@ -140,12 +140,21 @@ describe("$BERN Reward allocation", () => {
 		const devAmount = Math.floor(currentTokenBalance * devPct)
 		const {ix: devIx, dstAta: devAta} = await transferTokenAmountInstruction(devAddress, tokenMint, devAmount, mintProgram)
 
+		const daoAtaInfo = await connection.getParsedAccountInfo(daoAta, "confirmed")
+		const devAtaInfo = await connection.getParsedAccountInfo(devAta, "confirmed")
+
 		let txn = new anchor.web3.Transaction()
+
+		if (!daoAtaInfo.value)
 		txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, daoAta, daoAddress, tokenMint, mintProgram))
+		if (!devAtaInfo.value)
 		txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, devAta, devAddress, tokenMint, mintProgram))
+
+		//Add our transfer commands
 		txn.add(daoIx)
 		txn.add(devIx)
 
+		console.log("CORE Sending DAO & Dev allocation...")
 		const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
 		console.log("CORE XFER Sig: ", sig)
 
@@ -222,14 +231,12 @@ describe("$BERN Reward allocation", () => {
 		let txn = new anchor.web3.Transaction()
 
 		for (let i = 0; i < currentHolders.length; i++) {
-			console.log("Current holder: ", currentHolders[i])
-			const holder = AccountLayout.decode(currentHolders[i].account.data)
-			console.log("holderAcc", holder)
+			const holder = currentHolders[i]
 
-			const totalAmount = holder.amount * amountPerToken
+			const totalAmount = Math.floor(holder.amount * amountPerToken)
 			console.log(`XFER -> DEV ${totalAmount} (${holder.amount} x ${amountPerToken})`)
 
-			txn.add(createTransferCheckedInstruction(src, tokenMint, ata, owner.publicKey, totalAmount, mintInfo.decimals))
+			txn.add(createTransferCheckedInstruction(src, tokenMint, holder.address, owner.publicKey, totalAmount, mintInfo.decimals))
 
 			//TODO Calculate amount of xfers we can do per txn
 			if (txn.instructions.length > 18) {
