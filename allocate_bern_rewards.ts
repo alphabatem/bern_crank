@@ -21,8 +21,7 @@ describe("$BERN Reward allocation", () => {
 	const USDC = new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
 
 	//Set Token Mint
-	// let tokenMint = new anchor.web3.PublicKey("4rADWie1EB5k2Dd49oM1SfeNawTRtV2ZTyutFb3B57nG");
-	let tokenMint = new anchor.web3.PublicKey("FdkGacJRQLorEUVewJjtc9xkupbAVeAKNAzNeHhr91XD");
+	let tokenMint = new anchor.web3.PublicKey("CKfatsPMUf8SkiURsDXs7eK6GWb4Jsd6UDbs7twMCWxo");
 
 	//Set the token to route through
 	let intermediaryMint = USDC
@@ -398,7 +397,10 @@ describe("$BERN Reward allocation", () => {
 	async function swapFluxbeamPool(tokenA: TokenInput, tokenB: TokenInput, tokenAAmount, minAmountOut = 0) {
 		console.log(`Getting swap pool - ${tokenA.mint} -> ${tokenB.mint}`)
 		const pools = await swapClient.getSwapPools(tokenA.mint, tokenB.mint)
-		const route = pools[0]
+		// const route = pools[0]
+		console.log('(swapFluxbeamPool) pools found are\t', pools);
+		// const route = pools[0]
+		const route = pools.find(pool => pool.pubkey === new anchor.web3.PublicKey('Ebbpz3PWLaQxj2oyK967RgEPbcPypjQCoZ3tpB4fwLsk'));
 		if (!route) {
 			throw new Error("No pools for swap input")
 		}
