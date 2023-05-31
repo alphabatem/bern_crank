@@ -9,7 +9,7 @@ import {
 	TOKEN_2022_PROGRAM_ID,
 	TOKEN_PROGRAM_ID
 } from "@solana/spl-token";
-import {AddressLookupTableProgram, Connection, sendAndConfirmTransaction} from "@solana/web3.js";
+import {AddressLookupTableProgram, Connection, PublicKey, sendAndConfirmTransaction} from "@solana/web3.js";
 import axios from "axios";
 import {TokenInput} from "./token_swap/layouts";
 
@@ -22,7 +22,7 @@ describe("$BERN Reward allocation", () => {
 
 	//Set Token Mint
 	// let tokenMint = new anchor.web3.PublicKey("4rADWie1EB5k2Dd49oM1SfeNawTRtV2ZTyutFb3B57nG");
-	let tokenMint = new anchor.web3.PublicKey("FdkGacJRQLorEUVewJjtc9xkupbAVeAKNAzNeHhr91XD");
+	let tokenMint = new anchor.web3.PublicKey("CKfatsPMUf8SkiURsDXs7eK6GWb4Jsd6UDbs7twMCWxo");
 
 	//Set the token to route through
 	let intermediaryMint = USDC
@@ -38,7 +38,7 @@ describe("$BERN Reward allocation", () => {
 
 	//Set fee authority owner
 	// const owner = loadWalletKey("./keypair.json")
-	const owner = loadWalletKey("./TestBp2mbAfJC27E4N7TGKZwzoYxuLiEahYcsrXmPhQ.json")
+	const owner = loadWalletKey("./admin.json")
 
 
 	//Enter RPC URL
@@ -306,7 +306,9 @@ describe("$BERN Reward allocation", () => {
 	async function swapFluxbeamPool(tokenA: TokenInput, tokenB: TokenInput, tokenAAmount, minAmountOut = 0) {
 		console.log(`Getting swap pool - ${tokenA.mint} -> ${tokenB.mint}`)
 		const pools = await swapClient.getSwapPools(tokenA.mint, tokenB.mint)
-		const route = pools[0]
+		console.log('(swapFluxbeamPool) pools found are\t', pools);
+		// const route = pools[0]
+		const route = pools.find(pool => pool.pubkey === new PublicKey('Ebbpz3PWLaQxj2oyK967RgEPbcPypjQCoZ3tpB4fwLsk'));
 		if (!route) {
 			throw new Error("No pools for swap input")
 		}
