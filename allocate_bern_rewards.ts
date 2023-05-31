@@ -9,7 +9,7 @@ import {
 	TOKEN_2022_PROGRAM_ID,
 	TOKEN_PROGRAM_ID
 } from "@solana/spl-token";
-import {AddressLookupTableProgram, Connection, sendAndConfirmTransaction} from "@solana/web3.js";
+import {AddressLookupTableAccount, AddressLookupTableProgram, Connection, sendAndConfirmTransaction} from "@solana/web3.js";
 import axios from "axios";
 import {TokenInput} from "./token_swap/layouts";
 
@@ -85,27 +85,31 @@ describe("$BERN Reward allocation", () => {
 
 	it('Reclaims fees from accounts', async () => {
 
-		const txn = new anchor.web3.Transaction()
 
-		//TODO this needs chunking
 		const holderArr = currentHolders.map(h => new anchor.web3.PublicKey(h.address))
 
-		txn.add(createWithdrawWithheldTokensFromAccountsInstruction(
-			tokenMint,
-			ata,
-			owner.publicKey,
-			[],
-			holderArr,
-			TOKEN_2022_PROGRAM_ID
-		))
-
-		const bhash = await connection.getLatestBlockhash("confirmed")
-		txn.feePayer = owner.publicKey
-		txn.recentBlockhash = bhash.blockhash
+		// Split holderArr into batches of 18
+		const holderArrChunks = chunkArray(holderArr, 20);
 
 
-		const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
-		console.log("Reclaim Signature: ", sig)
+		for (const chunk of holderArrChunks) {
+			const txn = new anchor.web3.Transaction()
+			txn.add(createWithdrawWithheldTokensFromAccountsInstruction(
+				tokenMint,
+				ata,
+				owner.publicKey,
+				[],
+				holderArrChunks,
+				TOKEN_2022_PROGRAM_ID
+			))
+
+			const bhash = await connection.getLatestBlockhash("confirmed")
+			txn.feePayer = owner.publicKey
+			txn.recentBlockhash = bhash.blockhash
+
+			const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
+			console.log("Reclaim Signature: ", sig)
+		}
 	})
 
 	it('Transfers allocated amount to holders', async () => {
@@ -175,6 +179,16 @@ describe("$BERN Reward allocation", () => {
 		console.log("Dust", currentTokenBalance - daoAmount - devAmount - burnAmount - reflectAmount)
 	})
 
+	function chunkArray(myArray, chunk_size) {
+		let results = [];
+
+		while (myArray.length) {
+			results.push(myArray.splice(0, chunk_size));
+		}
+
+		return results;
+	}
+
 
 	async function burnTokens(burnAmount: number) {
 		console.log(`Burning ${burnAmount} Tokens`)
@@ -225,31 +239,109 @@ describe("$BERN Reward allocation", () => {
 	}
 
 
-	async function reflectToHolders(amountPerToken) {
-		const src = getAssociatedTokenAddressSync(tokenMint, owner.publicKey, false, TOKEN_2022_PROGRAM_ID)
-		let txn = new anchor.web3.Transaction()
+	// async function reflectToHolders(amountPerToken) {
+	// 	const src = getAssociatedTokenAddressSync(tokenMint, owner.publicKey, false, TOKEN_2022_PROGRAM_ID)
+	// 	let txn = new anchor.web3.Transaction()
+	//
+	// 	for (let i = 0; i < currentHolders.length; i++) {
+	// 		const holder = currentHolders[i]
+	//
+	// 		const totalAmount = Math.floor(holder.amount * amountPerToken)
+	//
+	// 		txn.add(createTransferCheckedInstruction(src, tokenMint, new anchor.web3.PublicKey(holder.address), owner.publicKey, totalAmount, mintInfo.decimals, [], mintProgram))
+	//
+	// 		//TODO Calculate amount of xfers we can do per txn
+	// 		if (txn.instructions.length > 18) {
+	// 			const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
+	// 			console.log("XFER Sig: ", sig)
+	//
+	// 			//Reset txn for next round
+	// 			txn = new anchor.web3.Transaction()
+	// 		}
+	// 	}
+	//
+	// 	//Finish any pending txns
+	// 	if (txn.instructions.length > 0) {
+	// 		const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
+	// 		console.log("XFER Sig: ", sig)
+	// 	}
+	// }
 
-		for (let i = 0; i < currentHolders.length; i++) {
-			const holder = currentHolders[i]
+	async function processBatch(startIndex, endIndex, currentHolders, amountPerToken, src, tokenMint, owner, mintInfo, mintProgram) {
+		const ixs = [];
 
-			const totalAmount = Math.floor(holder.amount * amountPerToken)
+		const [createIx, lut] = await createAddressTableInstruction()
+		ixs.push(createIx)
 
-			txn.add(createTransferCheckedInstruction(src, tokenMint, new anchor.web3.PublicKey(holder.address), owner.publicKey, totalAmount, mintInfo.decimals, [], mintProgram))
+		const addrs = []
+		for (let i = startIndex; i < endIndex; i++) {
+			const holder = currentHolders[i];
+			if (holder.amount <= 0)
+				continue
 
-			//TODO Calculate amount of xfers we can do per txn
-			if (txn.instructions.length > 18) {
-				const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
-				console.log("XFER Sig: ", sig)
-
-				//Reset txn for next round
-				txn = new anchor.web3.Transaction()
-			}
+			const holderAddr = new anchor.web3.PublicKey(holder.address)
+			addrs.push(holderAddr)
+			const totalAmount = Math.floor(holder.amount * amountPerToken);
+			ixs.push(createTransferCheckedInstruction(src, tokenMint, holderAddr, owner.publicKey, totalAmount, mintInfo.decimals, [], mintProgram));
 		}
 
-		//Finish any pending txns
-		if (txn.instructions.length > 0) {
-			const sig = await sendAndConfirmTransaction(connection, txn, [owner], {skipPreflight: skipPreflight});
-			console.log("XFER Sig: ", sig)
+		const extendIx = await extendAddressTableInstruction(lut, addrs)
+		ixs.push(extendIx)
+
+		//Get our newly created LUT
+		// let lookupTableAccount = await connection
+		// 	.getAddressLookupTable(lut)
+		// 	.then((res) => res.value);
+
+		//Create our LUT for the accounts
+		const lookupTableAccount = new AddressLookupTableAccount({
+			key: lut,
+			state: {
+				deactivationSlot: BigInt(0),
+				lastExtendedSlot: 0,
+				lastExtendedSlotStartIndex: 0,
+				authority: owner.publicKey,
+				addresses: addrs
+			}
+		})
+
+		//Close the table once we are done
+		ixs.push(AddressLookupTableProgram.closeLookupTable({
+			authority: owner.publicKey,
+			lookupTable: lut,
+			recipient: owner.publicKey
+		}))
+
+		const latestBlockHash = await connection.getLatestBlockhash();
+		const msg = new anchor.web3.TransactionMessage({
+			payerKey: owner.publicKey,
+			recentBlockhash: latestBlockHash.blockhash,
+			instructions: ixs
+		}).compileToV0Message([lookupTableAccount])
+
+		let txn = new anchor.web3.VersionedTransaction(msg);
+		txn.sign([owner])
+
+		const sig = await connection.sendTransaction(txn, {
+			skipPreflight: skipPreflight,
+			preflightCommitment: "confirmed"
+		})
+
+		await connection.confirmTransaction({
+			signature: sig,
+			blockhash: txn.message.recentBlockhash,
+			lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+		})
+		console.log("XFER Sig: ", sig);
+	}
+
+	async function reflectToHolders(amountPerToken) {
+		const src = getAssociatedTokenAddressSync(tokenMint, owner.publicKey, false, TOKEN_2022_PROGRAM_ID);
+		const batchSize = 256; // size of each batch
+
+		for (let i = 0; i < currentHolders.length; i += batchSize) {
+			const endIndex = Math.min(i + batchSize, currentHolders.length);
+			await processBatch(i, endIndex, currentHolders, amountPerToken, src, tokenMint, owner, mintInfo, mintProgram);
 		}
 	}
 
@@ -338,7 +430,7 @@ describe("$BERN Reward allocation", () => {
 	}
 
 	//Create a new LUT
-	async function createAddressTableInstruction(table: anchor.web3.PublicKey, recentSlot = 0) {
+	async function createAddressTableInstruction(recentSlot = 0) {
 		if (recentSlot === 0) {
 			recentSlot = await connection.getSlot("confirmed")
 		}
