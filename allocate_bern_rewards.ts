@@ -98,7 +98,7 @@ describe("$BERN Reward allocation", () => {
 				ata,
 				owner.publicKey,
 				[],
-				holderArrChunks,
+				chunk,
 				TOKEN_2022_PROGRAM_ID
 			))
 
