@@ -3,6 +3,7 @@ import {createTransferCheckedInstruction, getAssociatedTokenAddressSync, TOKEN_2
 import {AddressLookupTableAccount, AddressLookupTableProgram, Connection, sendAndConfirmTransaction} from "@solana/web3.js";
 import axios from "axios";
 import {TokenSwapLayout} from "./token_swap/layouts";
+import {web3} from "@project-serum/anchor";
 
 
 describe("Burn analytics", () => {
@@ -33,21 +34,20 @@ describe("Burn analytics", () => {
 		const lp = []
 
 		for (const acc of accs) {
-			console.log("ACC", acc)
 			const holders = await connection.getTokenLargestAccounts(acc.account.tokenPool, "confirmed")
 			lp.push(...holders.value.filter(h => h.uiAmount > 0).map((h) => h.address))
 
 			const lpOwners = await connection.getMultipleParsedAccounts(lp, {commitment: "confirmed"})
 			//@ts-ignore
-			console.log("lpOwners", lpOwners.value[0].data.parsed.info.owner)
 
 			for(const h of lpOwners.value) {
 
 				//@ts-ignore
-				const ata = getAssociatedTokenAddressSync(tokenMint, h.data.parsed.info.owner, false, TOKEN_2022_PROGRAM_ID)
+				const ata = getAssociatedTokenAddressSync(tokenMint, new web3.PublicKey(h.data.parsed.info.owner), false, TOKEN_2022_PROGRAM_ID)
 
 				//@ts-ignore
 				lpOwnerMap[ata.toString()] = h.data.parsed.info.owner.toString()
+				console.log("lpOwners", ata)
 			}
 		}
 
