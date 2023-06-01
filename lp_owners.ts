@@ -46,13 +46,18 @@ describe("Burn analytics", () => {
 				const ata = getAssociatedTokenAddressSync(tokenMint, new web3.PublicKey(h.data.parsed.info.owner), false, TOKEN_2022_PROGRAM_ID)
 
 				//@ts-ignore
-				lpOwnerMap[ata.toString()] = h.data.parsed.info.owner.toString()
-				console.log("lpOwners", ata)
+				lpOwnerMap[h.toString] = ata.toString()
 			}
 		}
 
 
 		console.log(lpOwnerMap)
+
+
+		//Check if LP owner is in map
+		console.log("FIND 3XoZ1YL9m8cwfheBEb7JprXUCpqVXwnZJW9kJXbffttx =", lpOwnerMap["3XoZ1YL9m8cwfheBEb7JprXUCpqVXwnZJW9kJXbffttx"])
+
+		//Expect: AZRMSXfBrGwpWHLC2ZPnbs4YdGD5ezvS1eAyDyRWt1E2
 	})
 
 
