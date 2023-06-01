@@ -40,13 +40,14 @@ describe("Burn analytics", () => {
 			const lpOwners = await connection.getMultipleParsedAccounts(lp, {commitment: "confirmed"})
 			//@ts-ignore
 
-			for(const h of lpOwners.value) {
+			for(let i = 0; i < lpOwners.value; i++) {
+				const h = lpOwners.value[i]
 
 				//@ts-ignore
 				const ata = getAssociatedTokenAddressSync(tokenMint, new web3.PublicKey(h.data.parsed.info.owner), false, TOKEN_2022_PROGRAM_ID)
 
 				//@ts-ignore
-				lpOwnerMap[h.toString] = ata.toString()
+				lpOwnerMap[lp[i]] = ata.toString()
 			}
 		}
 
