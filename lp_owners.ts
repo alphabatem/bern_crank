@@ -43,11 +43,12 @@ describe("Burn analytics", () => {
 			for(let i = 0; i < lpOwners.value.length; i++) {
 				const h = lpOwners.value[i]
 
+				//TODO if you want to use the ATA of the token mint rather than wallet, swap for ata here
 				//@ts-ignore
 				const ata = getAssociatedTokenAddressSync(tokenMint, new web3.PublicKey(h.data.parsed.info.owner), false, TOKEN_2022_PROGRAM_ID)
 
 				//@ts-ignore
-				lpOwnerMap[lp[i]] = ata.toString()
+				lpOwnerMap[lp[i]] = h.data.parsed.info.owner.toString()
 			}
 		}
 
