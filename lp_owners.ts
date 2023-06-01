@@ -38,9 +38,9 @@ describe("Burn analytics", () => {
 			lp.push(...holders.value.filter(h => h.uiAmount > 0).map((h) => h.address))
 
 			const lpOwners = await connection.getMultipleParsedAccounts(lp, {commitment: "confirmed"})
-			//@ts-ignore
 
-			for(let i = 0; i < lpOwners.value; i++) {
+			//@ts-ignore
+			for(let i = 0; i < lpOwners.value.length; i++) {
 				const h = lpOwners.value[i]
 
 				//@ts-ignore
