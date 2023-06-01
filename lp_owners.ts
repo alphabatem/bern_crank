@@ -42,11 +42,12 @@ describe("Burn analytics", () => {
 
 			for(const h of lpOwners.value) {
 				//@ts-ignore
-				lpOwnerMap[acc.pubkey.toString()] = h.data.parsed.info.owner.toString()
+				lpOwnerMap[acc.account.tokenPool.toString()] = h.data.parsed.info.owner.toString()
 			}
 		}
 
 
+		console.log(lpOwnerMap)
 	})
 
 
