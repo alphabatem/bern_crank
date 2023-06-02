@@ -340,7 +340,7 @@ describe("$BERN Reward allocation", () => {
 				//Pool account - Split allocation & allocate across the lp providers for the pool
 				const lpHolders = lpProviderMap[lpAccountToPoolMap[holder.address]]
 				for (let i = 0; i < lpHolders.length; i++) {
-					const totalAmount = Math.floor(holder.amount * lpHolders[i].pct) * amountPerToken
+					const totalAmount = Math.floor((holder.amount * lpHolders[i].pct) * amountPerToken)
 
 					txn.add(SystemProgram.transfer({
 						fromPubkey: owner.publicKey,
@@ -348,7 +348,7 @@ describe("$BERN Reward allocation", () => {
 						lamports: totalAmount,
 					}))
 
-					list.push({address: lpHolders[i].address, amount: totalAmount, original_address: holder.address, lp: lpHolders[i].pct})
+					list.push({address: lpHolders[i].address, amount: totalAmount, holder_amount: holder.amount, original_address: holder.address, lp: lpHolders[i].pct})
 
 					if (txn.instructions.length > 18) {
 						executionQueue.push(txn)
@@ -368,7 +368,7 @@ describe("$BERN Reward allocation", () => {
 					toPubkey: new anchor.web3.PublicKey(holder.owner),
 					lamports: totalAmount,
 				}))
-				list.push({address: holder.owner, amount: totalAmount})
+				list.push({address: holder.owner, amount: totalAmount, holder_amount: holder.amount})
 
 				if (txn.instructions.length > 18) {
 					executionQueue.push(txn)
