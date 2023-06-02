@@ -148,14 +148,14 @@ export default class Client {
 	async createSwapTransaction(payer: web3.PublicKey, pool: web3.PublicKey, srcMint: TokenInput, dstMint: TokenInput, route: TokenSwapPool, amountIn: number, minimumAmountOut: number) {
 		const aToB = srcMint.mint.equals(route.mintA)
 
-		// console.debug("createSwapTransaction", {
+		// console.log("createSwapTransaction", {
 		// 	amountIn,
 		// 	minimumAmountOut,
 		// 	srcMint: srcMint.mint.toString(),
 		// 	dstMint: dstMint.mint.toString(),
 		// 	routeSrc: route.mintA.toString(),
 		// 	routeDst: route.mintB.toString(),
-		// 	aToB: aToB
+		// 	aToBo: aToB
 		// })
 		const mintAInfo = await this.connection.getParsedAccountInfo(srcMint.mint)
 		const mintBInfo = await this.connection.getParsedAccountInfo(dstMint.mint)
@@ -166,6 +166,12 @@ export default class Client {
 
 		const userSource = getAssociatedTokenAddressSync(srcMint.mint, payer, false, mintAInfo.value?.owner!)
 		const userDestination = getAssociatedTokenAddressSync(dstMint.mint, payer, false, mintBInfo.value?.owner!)
+		const userDestinationInfo = await this.connection.getParsedAccountInfo(userDestination)
+		// console.log("createSwapTransaction:2", {
+		// 	mintAOwner: mintAInfo.value?.owner!.toString(),
+		// 	mintBOwner: mintBInfo.value?.owner!.toString(),
+		// 	userDestinationInfo: userDestinationInfo.value
+		// })
 
 		const poolSource = aToB ? route.tokenAccountA : route.tokenAccountB
 		const poolDestination = aToB ? route.tokenAccountB : route.tokenAccountA
@@ -176,6 +182,10 @@ export default class Client {
 			const ixs = await this.getWrapSOLInstructions(payer, srcMint.amount);
 			if (ixs.length > 0)
 				transaction.add(...ixs)
+		}
+
+		if (!userDestinationInfo.value) {
+			transaction.add(createAssociatedTokenAccountInstruction(payer, userDestination, payer, dstMint.mint, mintBInfo.value?.owner!))
 		}
 
 		transaction.add(Instructions.createSwapInstruction(

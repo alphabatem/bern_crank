@@ -23,22 +23,31 @@ describe("Burn analytics", () => {
 
 	}
 
+	//Holds LP -> Owners
+	const poolMap = {
+
+	}
+
+	//Get Pools
+		//Get LP Holders
+		//Allocation should be split between LP Holders
+	//We need a map of Pools -> LP Holders & % of the pool
+
 	it('Gets owners vs LP Pools', async () => {
 		console.log("Checking token: ", tokenMint.toString())
 
 
-		const accs = await getSwapPools(tokenMint)
+		const pools = await getSwapPools(tokenMint)
 
-		console.log("Pools: ", accs.length)
+		console.log("Pools: ", pools.length)
 
 		const lp = []
 
-		for (const acc of accs) {
-			const holders = await connection.getTokenLargestAccounts(acc.account.tokenPool, "confirmed")
+		for (const pool of pools) {
+			const holders = await connection.getTokenLargestAccounts(pool.account.tokenPool, "confirmed")
 			lp.push(...holders.value.filter(h => h.uiAmount > 0).map((h) => h.address))
 
 			const lpOwners = await connection.getMultipleParsedAccounts(lp, {commitment: "confirmed"})
-
 			//@ts-ignore
 			for(let i = 0; i < lpOwners.value.length; i++) {
 				const h = lpOwners.value[i]
@@ -52,9 +61,7 @@ describe("Burn analytics", () => {
 			}
 		}
 
-
 		console.log(lpOwnerMap)
-
 
 		//Check if LP owner is in map
 		console.log("FIND 3XoZ1YL9m8cwfheBEb7JprXUCpqVXwnZJW9kJXbffttx =", lpOwnerMap["3XoZ1YL9m8cwfheBEb7JprXUCpqVXwnZJW9kJXbffttx"])
