@@ -3,14 +3,13 @@ import Client from "./token_swap/client";
 import {
 	createAssociatedTokenAccountInstruction,
 	createBurnCheckedInstruction,
-	createCloseAccountInstruction,
 	createTransferCheckedInstruction,
 	createWithdrawWithheldTokensFromAccountsInstruction,
 	getAssociatedTokenAddressSync,
 	TOKEN_2022_PROGRAM_ID,
 	TOKEN_PROGRAM_ID
 } from "@solana/spl-token";
-import {AddressLookupTableAccount, AddressLookupTableProgram, Connection, sendAndConfirmTransaction, SystemProgram} from "@solana/web3.js";
+import {Connection, sendAndConfirmTransaction, SystemProgram} from "@solana/web3.js";
 import axios from "axios";
 import {TokenInput, TokenSwapLayout} from "./token_swap/layouts";
 import fs from "fs";
@@ -34,8 +33,9 @@ describe("$BERN Reward allocation", () => {
 	let intermediaryInput = new TokenInput(intermediaryMint, 0, TOKEN_PROGRAM_ID);
 
 	//Set the token mint to distribute to holders of tokenMint
-	let reflectionMint = WSOL
-	let reflectionInput = new TokenInput(intermediaryMint, 0, TOKEN_PROGRAM_ID);
+	// let reflectionMint = WSOL
+	let reflectionMint = tokenMint //Distributing in our base token
+	let reflectionInput = new TokenInput(reflectionMint, 0, TOKEN_2022_PROGRAM_ID);
 
 	//Set to burn BONK
 	let tokenBurnMint = new anchor.web3.PublicKey("DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263");
@@ -71,6 +71,9 @@ describe("$BERN Reward allocation", () => {
 	//Token burn mint info
 	let burnMintInfo;
 
+	//Token reflection mint info
+	let reflectionMintInfo;
+
 	//Current holders of the token mint
 	let currentHolders;
 
@@ -98,6 +101,10 @@ describe("$BERN Reward allocation", () => {
 		//Token burn mint info
 		burnMintInfo = await connection.getParsedAccountInfo(tokenBurnMint, "confirmed")
 		burnMintInfo = burnMintInfo.value.data.parsed.info
+
+		//Token burn mint info
+		reflectionMintInfo = await connection.getParsedAccountInfo(reflectionMint, "confirmed")
+		reflectionMintInfo = reflectionMintInfo.value.data.parsed.info
 
 		//Owner authority token account
 		ata = getAssociatedTokenAddressSync(tokenMint, owner.publicKey, false, TOKEN_2022_PROGRAM_ID)
@@ -398,71 +405,67 @@ describe("$BERN Reward allocation", () => {
 	 * @param mintProgram
 	 */
 	async function processBatch(startIndex, endIndex, currentHolders, amountPerToken, src, tokenMint, owner, mintInfo, mintProgram) {
-		const ixs = [];
 
-		const [createIx, lut] = await createAddressTableInstruction()
-		ixs.push(createIx)
+		let txn = new anchor.web3.Transaction()
+		let list = []
+		let ixPerTx = 18
 
-		const addrs = []
+		//Unwrap our SOL
+		// txn.add(createCloseAccountInstruction(getAssociatedTokenAddressSync(WSOL, owner.publicKey, false), owner.publicKey, owner.publicKey, []))
+
 		for (let i = startIndex; i < endIndex; i++) {
 			const holder = currentHolders[i];
 			if (holder.amount <= 0)
 				continue
 
-			const holderAddr = new anchor.web3.PublicKey(holder.address)
-			addrs.push(holderAddr)
-			const totalAmount = Math.floor(holder.amount * amountPerToken);
-			ixs.push(createTransferCheckedInstruction(src, tokenMint, holderAddr, owner.publicKey, totalAmount, mintInfo.decimals, [], mintProgram));
+			if (lpAccountToPoolMap[holder.address]) {
+				//Pool account - Split allocation & allocate across the lp providers for the pool
+				const lpHolders = lpProviderMap[lpAccountToPoolMap[holder.address]]
+				for (let i = 0; i < lpHolders.length; i++) {
+					const totalAmount = Math.floor((holder.amount * lpHolders[i].pct) * amountPerToken)
+					try {
+						const holderAddr = getAssociatedTokenAddressSync(reflectionMintInfo.mint, new anchor.web3.PublicKey(lpHolders[i].address), false, reflectionInput.programID)
+						txn.add(createTransferCheckedInstruction(src, reflectionMintInfo.mint, holderAddr, new anchor.web3.PublicKey(lpHolders[i].address), totalAmount, reflectionMintInfo.decimals, [], reflectionInput.programID));
+					} catch (e) {
+						console.log(`LP Off Curve Address detected: ${lpHolders[i].address}`, e)
+						continue
+					}
+
+					list.push({address: lpHolders[i].address, amount: totalAmount, holder_amount: holder.amount, original_address: holder.address, lp: lpHolders[i].pct})
+
+					if (txn.instructions.length > ixPerTx) {
+						executionQueue.push(txn)
+
+						//Reset txn for next round
+						txn = new anchor.web3.Transaction()
+					}
+				}
+
+			} else {
+				//Normal account - process as normal
+				const totalAmount = Math.floor(holder.amount * amountPerToken);
+				try {
+					const holderAddr = getAssociatedTokenAddressSync(reflectionMintInfo.mint, new anchor.web3.PublicKey(owner.publicKey), false, reflectionInput.programID)
+					txn.add(createTransferCheckedInstruction(src, reflectionMintInfo.mint, holderAddr, owner.publicKey, totalAmount, reflectionMintInfo.decimals, [], reflectionInput.programID));
+				} catch (e) {
+					console.log(`Off Curve Address detected: ${owner.publicKey}`, e)
+					continue
+				}
+
+				list.push({address: holder.owner, amount: totalAmount, holder_amount: holder.amount})
+
+				if (txn.instructions.length > ixPerTx) {
+					executionQueue.push(txn)
+
+					//Reset txn for next round
+					txn = new anchor.web3.Transaction()
+				}
+			}
 		}
 
-		const extendIx = await extendAddressTableInstruction(lut, addrs)
-		ixs.push(extendIx)
+		executionQueue.push(txn)
 
-		//Get our newly created LUT
-		// let lookupTableAccount = await connection
-		// 	.getAddressLookupTable(lut)
-		// 	.then((res) => res.value);
-
-		//Create our LUT for the accounts
-		const lookupTableAccount = new AddressLookupTableAccount({
-			key: lut,
-			state: {
-				deactivationSlot: BigInt(0),
-				lastExtendedSlot: 0,
-				lastExtendedSlotStartIndex: 0,
-				authority: owner.publicKey,
-				addresses: addrs
-			}
-		})
-
-		//Close the table once we are done
-		ixs.push(AddressLookupTableProgram.closeLookupTable({
-			authority: owner.publicKey,
-			lookupTable: lut,
-			recipient: owner.publicKey
-		}))
-
-		const latestBlockHash = await connection.getLatestBlockhash();
-		const msg = new anchor.web3.TransactionMessage({
-			payerKey: owner.publicKey,
-			recentBlockhash: latestBlockHash.blockhash,
-			instructions: ixs
-		}).compileToV0Message([lookupTableAccount])
-
-		let txn = new anchor.web3.VersionedTransaction(msg);
-		txn.sign([owner])
-
-		const sig = await connection.sendTransaction(txn, {
-			skipPreflight: skipPreflight,
-			preflightCommitment: "confirmed"
-		})
-
-		await connection.confirmTransaction({
-			signature: sig,
-			blockhash: txn.message.recentBlockhash,
-			lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
-		})
-		console.log("XFER Sig: ", sig);
+		return list
 	}
 
 	/**
@@ -474,22 +477,26 @@ describe("$BERN Reward allocation", () => {
 		const src = getAssociatedTokenAddressSync(tokenMint, owner.publicKey, false, TOKEN_2022_PROGRAM_ID);
 		const batchSize = 256; // size of each batch
 
+		let reflectionPerToken;
+		if (!reflectionMint.equals(tokenMint)) {
+			//Swap tokens to our reflection SPLv1 Token
+			const reflectionAmount = await swapFluxbeamPool(
+				tokenInput, //Input token
+				reflectionInput, //Output token
+				reflectionTotalAmount
+			)
 
-		//Swap tokens to our reflection SPLv1 Token
-		const reflectionAmount = await swapFluxbeamPool(
-			tokenInput, //Input token
-			reflectionInput, //Output token
-			reflectionTotalAmount
-		)
+			if (!reflectionAmount) {
+				console.error(`Unable to swap on fluxbeam ${tokenMint} -> ${reflectionMint}`)
+				return
+			}
 
-		if (!reflectionAmount) {
-			console.error(`Unable to swap on fluxbeam ${tokenMint} -> ${reflectionMint}`)
-			return
+			reflectionPerToken = reflectionAmount / mintInfo.supply
+			console.log(`Received ${reflectionAmount} of ${reflectionMint} - Per Token: ${reflectionPerToken}`)
+		} else {
+			reflectionPerToken = reflectionTotalAmount / mintInfo.supply
+			console.log(`Using Source Token ${reflectionTotalAmount} - Per Token: ${reflectionPerToken}`)
 		}
-
-		const reflectionPerToken = reflectionAmount / mintInfo.supply
-		console.log(`Received ${reflectionAmount} of ${reflectionMint} - Per Token: ${reflectionPerToken}`)
-
 
 		const list = [];
 		for (let i = 0; i < currentHolders.length; i += batchSize) {
@@ -557,6 +564,9 @@ describe("$BERN Reward allocation", () => {
 	}
 
 
+	/**
+	 * Builds our mapping of LP Providers to their correct wallet addresses
+	 */
 	async function buildLPProviderMaps() {
 		//So you have your pools
 		const pools = await getSwapPools(tokenMint)
@@ -663,38 +673,6 @@ describe("$BERN Reward allocation", () => {
 		return Number(postBalance?.value?.amount || postBalance) - Number(preBalance?.value?.amount || preBalance) + 5000
 	}
 
-	//Create a new LUT
-	async function createAddressTableInstruction(recentSlot = 0) {
-		if (recentSlot === 0) {
-			recentSlot = await connection.getSlot("confirmed")
-		}
-
-		return AddressLookupTableProgram.createLookupTable({
-			authority: owner.publicKey,
-			payer: owner.publicKey,
-			recentSlot: recentSlot
-		})
-	}
-
-	//Extend a new LUT
-	async function extendAddressTableInstruction(table: anchor.web3.PublicKey, addresses: anchor.web3.PublicKey[]) {
-		return AddressLookupTableProgram.extendLookupTable({
-			lookupTable: table,
-			authority: owner.publicKey,
-			payer: owner.publicKey,
-			addresses: addresses,
-		})
-	}
-
-
-	//Dispose of a LUT
-	function closeAddressTableInstruction(table: anchor.web3.PublicKey) {
-		return AddressLookupTableProgram.closeLookupTable({
-			authority: owner.publicKey,
-			lookupTable: table,
-			recipient: owner.publicKey
-		})
-	}
 
 	//Transfer token mint to dst for given transferAmount
 	async function transferTokenAmountInstruction(dst, mint, transferAmount, programID = TOKEN_PROGRAM_ID) {
