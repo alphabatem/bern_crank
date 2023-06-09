@@ -221,19 +221,17 @@ describe("$BERN Reward allocation", () => {
 	async function buildDevDaoAllocationTransaction(daoAmount, devAmount) {
 		console.log(`BUILD: Send Dev & Dao Allocation`)
 
+		let txn = new anchor.web3.Transaction()
+
 		//Send 0.1% to BONK DAO
 		const {ix: daoIx, dstAta: daoAta} = await transferTokenAmountInstruction(daoAddress, tokenMint, daoAmount, mintProgram)
+		const daoAtaInfo = await connection.getParsedAccountInfo(daoAta, "confirmed")
+		if (!daoAtaInfo.value)
+			txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, daoAta, daoAddress, tokenMint, mintProgram))
 
 		//Send 0.3% to Dev Wallet
 		const {ix: devIx, dstAta: devAta} = await transferTokenAmountInstruction(devAddress, tokenMint, devAmount, mintProgram)
-
-		const daoAtaInfo = await connection.getParsedAccountInfo(daoAta, "confirmed")
 		const devAtaInfo = await connection.getParsedAccountInfo(devAta, "confirmed")
-
-		let txn = new anchor.web3.Transaction()
-
-		if (!daoAtaInfo.value)
-			txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, daoAta, daoAddress, tokenMint, mintProgram))
 		if (!devAtaInfo.value)
 			txn.add(createAssociatedTokenAccountInstruction(owner.publicKey, devAta, devAddress, tokenMint, mintProgram))
 
